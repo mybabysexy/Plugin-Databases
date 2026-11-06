@@ -86,7 +86,7 @@ describe("MongoDB Engine & Dynamic Schema Parser", () => {
 describe("MongoDB Script Generation", () => {
   const engine = getEngine("mongodb");
 
-  it("generates valid standalone bash script with password in environment", () => {
+  it("generates valid standalone bash script with credentials embedded in URI", () => {
     const conn: Conn = {
       engine: "mongodb",
       address: "127.0.0.1",
@@ -103,10 +103,12 @@ describe("MongoDB Script Generation", () => {
     // Client check supports mongosh and mongo
     expect(script).toContain("command -v mongosh || command -v mongo");
     expect(script).toContain("dbx() {");
+    // Credentials are embedded into the URI (compatible with both mongosh and legacy mongo)
+    expect(script).toContain("ENCODED_USER");
+    expect(script).toContain("ENCODED_PASS");
     expect(script).toContain(
-      'args+=(--username "$DB_USER" --authenticationDatabase "$AUTH_DB")',
+      "${_SCHEME}${ENCODED_USER}:${ENCODED_PASS}@${_REST}",
     );
-    expect(script).toContain('args+=(--password "$MONGODB_PWD")');
   });
 
   it("generates replica set connection with multiple members and replicaSet query option", () => {

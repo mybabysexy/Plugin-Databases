@@ -112,6 +112,7 @@ export const mongodb: Engine = {
     'if [[ "$PARAMS" =~ authSource=([^&]+) ]]; then',
     '  AUTH_DB="${BASH_REMATCH[1]}"',
     "fi",
+    // --- build URI ---
     'case "$ADDR" in',
     "  mongodb://*|mongodb+srv://*)",
     '    URI="$ADDR"',
@@ -143,10 +144,19 @@ export const mongodb: Engine = {
           "fi",
         ]
       : []),
+    // --- inject credentials into URI (compatible with both mongosh and legacy mongo) ---
     'if [ -n "$DB_USER" ]; then',
-    '  args+=(--username "$DB_USER" --authenticationDatabase "$AUTH_DB")',
-    '  if [ -n "$MONGODB_PWD" ]; then',
-    '    args+=(--password "$MONGODB_PWD")',
+    // URL-encode user/pass using python3 (available on most systems) with sed fallback
+    "  _encode() { python3 -c \"import sys,urllib.parse; sys.stdout.write(urllib.parse.quote(sys.stdin.read(),safe=''))\" 2>/dev/null || cat; }",
+    "  ENCODED_USER=$(printf '%s' \"$DB_USER\" | _encode)",
+    "  ENCODED_PASS=$(printf '%s' \"$MONGODB_PWD\" | _encode)",
+    // Strip any existing scheme and inject user:pass@
+    '  _SCHEME="${URI%%://*}://"',
+    '  _REST="${URI#*://}"',
+    '  if [ -n "$ENCODED_PASS" ]; then',
+    '    URI="${_SCHEME}${ENCODED_USER}:${ENCODED_PASS}@${_REST}"',
+    "  else",
+    '    URI="${_SCHEME}${ENCODED_USER}@${_REST}"',
     "  fi",
     "fi",
     '"$MCLI" "${args[@]}" "$URI" --eval "$SQL" </dev/null',
