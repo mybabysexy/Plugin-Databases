@@ -54,7 +54,7 @@
     "noHost": "Open Databases from a host.",
     "error": "Could not load Databases from this host.",
     "sudo": "This host needs passwordless sudo to run commands as another user.",
-    "noTools": "No database client was found on this host. Install mysql, psql or sqlite3 to use this tab.",
+    "noTools": "No database client was found on this host. Install mysql, psql, sqlite3 or mongosh to use this tab.",
     "empty": "No database logins yet",
     "emptyHint": "Add a login for a database that runs on this host or can be reached from it.",
     "clientMissing": "Client missing"
@@ -68,13 +68,18 @@
     "engine": {
       "mysql": "MySQL / MariaDB",
       "postgres": "PostgreSQL",
-      "sqlite": "SQLite"
+      "sqlite": "SQLite",
+      "mongodb": "MongoDB"
     },
     "clientMissing": "The client for this database type was not found on the host.",
     "file": "Database file",
     "fileHint": "Full path of the SQLite file on the host.",
     "address": "Address",
     "addressHint": "Leave empty to use the local socket.",
+    "replicaSet": "Replica Set",
+    "replicaSetHint": "e.g. rs0. Leave blank for standalone.",
+    "authSource": "Auth Source",
+    "authSourceHint": "Database that holds credentials (default: admin).",
     "port": "Port",
     "user": "User",
     "password": "Password",
@@ -102,6 +107,8 @@
   },
   "browse": {
     "tables": "Tables",
+    "collections": "Collections",
+    "mongoQuery": "Console",
     "sql": "SQL",
     "database": "Database",
     "search": "Search tables",
@@ -127,6 +134,7 @@
     "apply": "Filter",
     "clear": "Clear",
     "filterPlaceholder": "Condition, for example status = 'active'",
+    "filterPlaceholderMongo": "Filter, for example {\"status\": \"active\"}",
     "range": "{{from}} to {{to}} of {{total}}",
     "rowCount": "{{count}} rows",
     "prev": "Previous page",
@@ -143,7 +151,12 @@
     "deleteTitle": "Delete this row?",
     "deleteDesc": "This cannot be undone.",
     "deleteFailed": "Could not delete the row.",
-    "locked": "These columns cannot be edited here:"
+    "locked": "These columns cannot be edited here:",
+    "modeForm": "Fields",
+    "modeJson": "JSON Document",
+    "addField": "Add Field",
+    "newFieldPlaceholder": "New field name...",
+    "jsonLabel": "Document JSON"
   },
   "structure": {
     "title": "Structure",
@@ -160,7 +173,9 @@
   },
   "sql": {
     "label": "SQL",
+    "mongoLabel": "MongoDB Script / Command",
     "placeholder": "SELECT * FROM users LIMIT 10",
+    "mongoPlaceholder": "db.collection.find().limit(20)",
     "run": "Run",
     "running": "Running",
     "hint": "Ctrl+Enter runs the query.",

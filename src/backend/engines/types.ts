@@ -9,6 +9,8 @@ export interface Conn {
   /** The default database, or the file path for SQLite. */
   database: string;
   runAs: string;
+  replicaSet?: string;
+  authSource?: string;
 }
 
 export interface Engine {

@@ -21,6 +21,7 @@ const CLIENT: Record<ConnectionView["engine"], keyof ToolsView> = {
   mysql: "mysql",
   postgres: "psql",
   sqlite: "sqlite3",
+  mongodb: "mongosh",
 };
 
 /** Databases for one host: saved logins, then a browser for the chosen one. */

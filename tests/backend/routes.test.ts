@@ -161,6 +161,7 @@ describe("test and scripts", () => {
       mysql: "mysql  Ver 8",
       psql: null,
       sqlite3: "3.45.1",
+      mongosh: null,
     });
   });
 });

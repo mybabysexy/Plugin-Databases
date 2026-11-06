@@ -180,7 +180,13 @@ export function DataGrid({
           onKeyDown={(e) => {
             if (e.key === "Enter") applyFilter();
           }}
-          placeholder={t("data.filterPlaceholder")}
+          placeholder={
+            connection.engine === "mongodb"
+              ? t("data.filterPlaceholderMongo", {
+                  defaultValue: 'Filter: {"status": "active"}',
+                })
+              : t("data.filterPlaceholder")
+          }
           className="h-8 min-w-48 flex-1 font-mono text-xs"
         />
         <Button variant="outline" size="sm" onClick={applyFilter}>

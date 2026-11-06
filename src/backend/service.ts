@@ -36,6 +36,30 @@ function toColumns(grid: Grid): ColumnInfo[] {
   }));
 }
 
+function parseMongoValues(values: Record<string, string | null>) {
+  const doc: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v === null) {
+      doc[k] = null;
+    } else {
+      const trimmed = v.trim();
+      if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+      ) {
+        try {
+          doc[k] = JSON.parse(trimmed);
+          continue;
+        } catch {
+          // keep as string
+        }
+      }
+      doc[k] = v;
+    }
+  }
+  return doc;
+}
+
 export function createService(remote: Remote) {
   async function run(
     hostId: number,
@@ -50,9 +74,11 @@ export function createService(remote: Remote) {
     return { engine, parts: sections(output) };
   }
 
-  /** MySQL has no schema inside a database, so the database is the schema. */
+  /** MySQL and MongoDB have no schema inside a database, so the database is the schema. */
   const schemaOf = (conn: Conn, target: TableTarget) =>
-    conn.engine === "mysql" ? target.db : target.schema || "public";
+    conn.engine === "mysql" || conn.engine === "mongodb"
+      ? target.db
+      : target.schema || "public";
 
   async function columnsOf(
     hostId: number,
@@ -141,6 +167,7 @@ export function createService(remote: Remote) {
         mysql: keys.mysql || null,
         psql: keys.psql || null,
         sqlite3: keys.sqlite3 || null,
+        mongosh: keys.mongosh || keys.mongo || null,
       };
     },
 
@@ -249,6 +276,87 @@ export function createService(remote: Remote) {
     ): Promise<RowsView> {
       const engine = getEngine(conn.engine);
       const schema = schemaOf(conn, req);
+
+      if (conn.engine === "mongodb") {
+        const limit = Math.min(Math.max(req.limit, 1), MAX_ROWS);
+        const offset = Math.max(req.offset, 0);
+        const mongoScript = [
+          "(function() {",
+          `  const d = db.getSiblingDB(${JSON.stringify(schema)});`,
+          `  const coll = d[${JSON.stringify(req.table)}];`,
+          "  let filter = {};",
+          `  const rawWhere = ${JSON.stringify(req.where.trim())};`,
+          "  if (rawWhere) {",
+          "    try { filter = JSON.parse(rawWhere); } catch(e) {}",
+          "  }",
+          "  let total = 0;",
+          "  try { total = coll.countDocuments(filter); } catch(e) {",
+          "    try { total = coll.find(filter).count(); } catch(e2) {}",
+          "  }",
+          "  const sort = {};",
+          `  const sortCol = ${JSON.stringify(req.orderBy)};`,
+          "  if (sortCol) {",
+          `    sort[sortCol] = ${req.dir === "desc" ? -1 : 1};`,
+          "  }",
+          `  const docs = coll.find(filter).sort(sort).skip(${offset}).limit(${limit}).toArray();`,
+          "  const fieldMap = {};",
+          '  fieldMap["_id"] = { type: "objectId", nullable: "0", primary: "1", def: null, extra: "PK" };',
+          "  docs.forEach(function(doc) {",
+          "    Object.keys(doc).forEach(function(key) {",
+          '      if (key === "_id") return;',
+          "      const val = doc[key];",
+          "      let t = typeof val;",
+          '      if (val === null) t = "null";',
+          '      else if (Array.isArray(val)) t = "array";',
+          '      else if (val instanceof Date) t = "date";',
+          "      else if (val && val._bsontype) t = val._bsontype.toLowerCase();",
+          "      if (!fieldMap[key]) {",
+          '        fieldMap[key] = { type: t, nullable: "1", primary: "0", def: null, extra: "" };',
+          '      } else if (fieldMap[key].type !== t && t !== "null") {',
+          '        fieldMap[key].type = "mixed";',
+          "      }",
+          "    });",
+          "  });",
+          "  const cols = Object.keys(fieldMap);",
+          "  const colInfos = cols.map(function(k) {",
+          "    const v = fieldMap[k];",
+          "    return [k, v.type, v.nullable, v.primary, v.def, v.extra];",
+          "  });",
+          "  const rows = docs.map(function(doc) {",
+          "    return cols.map(function(col) {",
+          "      const val = doc[col];",
+          "      if (val === undefined || val === null) return null;",
+          '      if (typeof val === "object") {',
+          "        if (val instanceof Date) return val.toISOString();",
+          '        if (val._bsontype === "ObjectId") return val.toString();',
+          "        return JSON.stringify(val);",
+          "      }",
+          "      return String(val);",
+          "    });",
+          "  });",
+          "  print(JSON.stringify({",
+          "    columnsInfo: colInfos,",
+          "    total: total,",
+          "    grid: { columns: cols, rows: rows }",
+          "  }));",
+          "})()",
+        ].join("\n");
+
+        const { parts } = await run(hostId, conn, req.db, [mongoScript], true);
+        const parsed = JSON.parse(parts[0] || "{}");
+        const columns = toColumns({
+          columns: [],
+          rows: parsed.columnsInfo || [
+            ["_id", "objectId", "0", "1", null, "PK"],
+          ],
+        });
+        return {
+          columns,
+          total: Number(parsed.total || 0),
+          grid: parsed.grid || { columns: ["_id"], rows: [] },
+        };
+      }
+
       const ref = engine.ref(schema, req.table);
       const where = req.where ? ` WHERE ${req.where}` : "";
       const order = req.orderBy
@@ -279,6 +387,32 @@ export function createService(remote: Remote) {
     },
 
     async insert(hostId: number, conn: Conn, req: RowWrite): Promise<Affected> {
+      if (conn.engine === "mongodb") {
+        const schema = schemaOf(conn, req);
+        const doc = parseMongoValues(req.values);
+        const insertScript = [
+          "(function() {",
+          `  const d = db.getSiblingDB(${JSON.stringify(schema)});`,
+          `  const coll = d[${JSON.stringify(req.table)}];`,
+          `  const doc = ${JSON.stringify(doc)};`,
+          '  if (doc._id && typeof doc._id === "string" && /^[0-9a-fA-F]{24}$/.test(doc._id)) {',
+          "    try { doc._id = ObjectId(doc._id); } catch(e) {}",
+          "  }",
+          "  coll.insertOne(doc);",
+          '  print(JSON.stringify({ columns: ["n"], rows: [["1"]] }));',
+          "})()",
+        ].join("\n");
+        const { parts } = await run(
+          hostId,
+          conn,
+          req.db,
+          [insertScript],
+          false,
+        );
+        const grid = getEngine(conn.engine).parse(parts[0] ?? "");
+        return { affected: Number(grid.rows[0]?.[0] ?? 1) };
+      }
+
       const columns = await columnsOf(hostId, conn, req);
       return counted(hostId, conn, req, (engine) => {
         const ref = engine.ref(schemaOf(conn, req), req.table);
@@ -295,6 +429,37 @@ export function createService(remote: Remote) {
       conn: Conn,
       req: RowUpdate,
     ): Promise<Affected> {
+      if (conn.engine === "mongodb") {
+        const schema = schemaOf(conn, req);
+        const idVal = req.key._id || Object.values(req.key)[0] || "";
+        const doc = parseMongoValues(req.values);
+        delete doc._id;
+        const updateScript = [
+          "(function() {",
+          `  const d = db.getSiblingDB(${JSON.stringify(schema)});`,
+          `  const coll = d[${JSON.stringify(req.table)}];`,
+          `  const id = ${JSON.stringify(idVal)};`,
+          "  let filter = { _id: id };",
+          "  if (/^[0-9a-fA-F]{24}$/.test(id)) {",
+          "    try { filter = { $or: [{ _id: ObjectId(id) }, { _id: id }] }; } catch(e) {}",
+          "  }",
+          `  const update = ${JSON.stringify(doc)};`,
+          "  const res = coll.updateOne(filter, { $set: update });",
+          "  const n = res ? (res.modifiedCount || res.matchedCount || 1) : 1;",
+          '  print(JSON.stringify({ columns: ["n"], rows: [[String(n)]] }));',
+          "})()",
+        ].join("\n");
+        const { parts } = await run(
+          hostId,
+          conn,
+          req.db,
+          [updateScript],
+          false,
+        );
+        const grid = getEngine(conn.engine).parse(parts[0] ?? "");
+        return { affected: Number(grid.rows[0]?.[0] ?? 1) };
+      }
+
       const columns = await columnsOf(hostId, conn, req);
       return counted(hostId, conn, req, (engine) => {
         const set = assignments(engine, columns, req.values);
@@ -311,6 +476,34 @@ export function createService(remote: Remote) {
       conn: Conn,
       req: RowDelete,
     ): Promise<Affected> {
+      if (conn.engine === "mongodb") {
+        const schema = schemaOf(conn, req);
+        const idVal = req.key._id || Object.values(req.key)[0] || "";
+        const deleteScript = [
+          "(function() {",
+          `  const d = db.getSiblingDB(${JSON.stringify(schema)});`,
+          `  const coll = d[${JSON.stringify(req.table)}];`,
+          `  const id = ${JSON.stringify(idVal)};`,
+          "  let filter = { _id: id };",
+          "  if (/^[0-9a-fA-F]{24}$/.test(id)) {",
+          "    try { filter = { $or: [{ _id: ObjectId(id) }, { _id: id }] }; } catch(e) {}",
+          "  }",
+          "  const res = coll.deleteOne(filter);",
+          "  const n = res ? (res.deletedCount || 1) : 1;",
+          '  print(JSON.stringify({ columns: ["n"], rows: [[String(n)]] }));',
+          "})()",
+        ].join("\n");
+        const { parts } = await run(
+          hostId,
+          conn,
+          req.db,
+          [deleteScript],
+          false,
+        );
+        const grid = getEngine(conn.engine).parse(parts[0] ?? "");
+        return { affected: Number(grid.rows[0]?.[0] ?? 1) };
+      }
+
       const columns = await columnsOf(hostId, conn, req);
       return counted(hostId, conn, req, (engine) => {
         const ref = engine.ref(schemaOf(conn, req), req.table);
@@ -326,7 +519,28 @@ export function createService(remote: Remote) {
       readOnly: boolean,
     ): Promise<QueryResult> {
       const started = Date.now();
-      const { engine, parts } = await run(hostId, conn, db, [sql], readOnly);
+      let queryStmt = sql;
+
+      if (conn.engine === "mongodb") {
+        queryStmt = [
+          "(function() {",
+          `  const __res = (function() { return (${sql.trim()}); })();`,
+          '  if (__res && typeof __res.toArray === "function") {',
+          "    print(JSON.stringify(__res.toArray()));",
+          "  } else {",
+          "    print(JSON.stringify(__res));",
+          "  }",
+          "})()",
+        ].join("\n");
+      }
+
+      const { engine, parts } = await run(
+        hostId,
+        conn,
+        db,
+        [queryStmt],
+        readOnly,
+      );
       const grid = engine.parse(parts[0] ?? "");
       const truncated = grid.rows.length > CONSOLE_ROWS;
       return {

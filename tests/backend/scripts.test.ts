@@ -58,7 +58,7 @@ function run(script: string) {
 
 describe.skipIf(!hasBash)("generated scripts", () => {
   it("are valid bash for every engine", () => {
-    for (const engine of ["mysql", "postgres", "sqlite"] as const) {
+    for (const engine of ["mysql", "postgres", "sqlite", "mongodb"] as const) {
       for (const readOnly of [true, false]) {
         const script = buildScript(
           getEngine(engine),

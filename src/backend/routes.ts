@@ -296,6 +296,8 @@ export function registerRoutes(
         password: input.password,
         database: input.database,
         runAs: input.runAs,
+        replicaSet: input.replicaSet,
+        authSource: input.authSource,
       };
       const savedId = Number(body(req).id);
       if (!input.password && Number.isInteger(savedId) && savedId > 0) {
@@ -565,7 +567,7 @@ export function registerRoutes(
         offset: integer(b.offset, "The offset", 0, 1_000_000_000, 0),
         orderBy: name(b.orderBy, "The sort column", false),
         dir: b.dir === "desc" ? "desc" : "asc",
-        where: filter(b.where),
+        where: filter(b.where, conn.engine),
       });
     }),
   );

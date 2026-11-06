@@ -129,12 +129,25 @@ export function Browser({
           value={mode}
           onChange={setMode}
           options={[
-            { value: "tables", label: t("browse.tables") },
-            // SQLite has no stored procedures.
-            ...(connection.engine === "sqlite"
+            {
+              value: "tables",
+              label:
+                connection.engine === "mongodb"
+                  ? t("browse.collections", { defaultValue: "Collections" })
+                  : t("browse.tables"),
+            },
+            // SQLite and MongoDB have no stored procedures.
+            ...(connection.engine === "sqlite" ||
+            connection.engine === "mongodb"
               ? []
               : [{ value: "routines" as const, label: t("browse.routines") }]),
-            { value: "sql", label: t("browse.sql") },
+            {
+              value: "sql",
+              label:
+                connection.engine === "mongodb"
+                  ? t("browse.mongoQuery", { defaultValue: "Console" })
+                  : t("browse.sql"),
+            },
           ]}
         />
       }

@@ -143,10 +143,20 @@ export function SqlConsole({
       }}
     >
       <TextAreaField
-        label={t("sql.label")}
+        label={
+          connection.engine === "mongodb"
+            ? t("sql.mongoLabel", { defaultValue: "MongoDB Script / Command" })
+            : t("sql.label")
+        }
         value={sql}
         onChange={setSql}
-        placeholder={t("sql.placeholder")}
+        placeholder={
+          connection.engine === "mongodb"
+            ? t("sql.mongoPlaceholder", {
+                defaultValue: "db.collection.find().limit(20)",
+              })
+            : t("sql.placeholder")
+        }
         rows={6}
         mono
       />

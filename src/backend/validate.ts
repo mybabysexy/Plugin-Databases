@@ -8,7 +8,7 @@ import {
 
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f]/;
-const ADDRESS = /^[A-Za-z0-9_.:\-[\]]{1,253}$/;
+const ADDRESS = /^[A-Za-z0-9_.:,\-[\]/?&=%+]{1,1024}$/;
 const LINUX_NAME = /^[a-z_][a-z0-9_-]{0,31}$/;
 
 export const MAX_ROWS = 500;
@@ -93,6 +93,9 @@ export function connectionInput(body: unknown): ConnectionInput {
     throw new DatabasesError("Run as is not a valid Linux user");
   }
 
+  const replicaSet = text(b.replicaSet, "The replica set", 128).trim();
+  const authSource = text(b.authSource, "The auth database", 128).trim();
+
   return {
     name: label,
     engine,
@@ -104,6 +107,8 @@ export function connectionInput(body: unknown): ConnectionInput {
     database,
     runAs,
     readOnly: b.readOnly === true,
+    replicaSet: replicaSet || undefined,
+    authSource: authSource || undefined,
   };
 }
 
@@ -130,10 +135,17 @@ export function rowValues(value: unknown, label: string): RowValues {
 }
 
 /** A WHERE clause from the grid filter. One statement only. */
-export function filter(value: unknown): string {
+export function filter(value: unknown, engine?: EngineId): string {
   const out = text(value, "The filter", 500).trim();
   if (!out) return "";
-  if (out.includes(";") || out.includes("\u0000")) {
+  if (out.includes("\u0000")) {
+    throw new DatabasesError("The filter is not valid");
+  }
+  if (engine === "mongodb") {
+    // MongoDB filter can be JSON or JavaScript expression
+    return out;
+  }
+  if (out.includes(";")) {
     throw new DatabasesError("The filter must be a single condition");
   }
   if (/\\[!.]/.test(out) || /^\s*[\\.]/m.test(out)) {
@@ -151,6 +163,9 @@ export function plainSql(engine: EngineId, value: unknown): string {
   const sql = text(value, "The SQL", 200_000).trim();
   if (!sql) throw new DatabasesError("Enter some SQL to run");
   if (sql.includes("\u0000")) throw new DatabasesError("The SQL is not valid");
+  if (engine === "mongodb") {
+    return sql;
+  }
   const lines = sql.split("\n").map((line) => line.trim());
   const bad =
     engine === "postgres"

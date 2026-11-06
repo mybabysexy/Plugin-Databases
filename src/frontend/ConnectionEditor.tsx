@@ -39,12 +39,15 @@ interface FormState {
   database: string;
   runAs: string;
   readOnly: boolean;
+  replicaSet: string;
+  authSource: string;
 }
 
 const DEFAULT_PORT: Record<EngineId, string> = {
   mysql: "3306",
   postgres: "5432",
   sqlite: "",
+  mongodb: "27017",
 };
 
 function initial(connection: ConnectionView | null): FormState {
@@ -59,6 +62,8 @@ function initial(connection: ConnectionView | null): FormState {
     database: connection?.database ?? "",
     runAs: connection?.runAs ?? "",
     readOnly: connection?.readOnly ?? false,
+    replicaSet: connection?.replicaSet ?? "",
+    authSource: connection?.authSource ?? "",
   };
 }
 
@@ -74,6 +79,8 @@ function toBody(form: FormState): ConnectionInput {
     database: form.database.trim(),
     runAs: form.runAs.trim(),
     readOnly: form.readOnly,
+    replicaSet: form.replicaSet.trim() || undefined,
+    authSource: form.authSource.trim() || undefined,
   };
 }
 
@@ -109,7 +116,9 @@ export function ConnectionEditor({
       ? tools?.mysql
       : form.engine === "postgres"
         ? tools?.psql
-        : tools?.sqlite3;
+        : form.engine === "mongodb"
+          ? tools?.mongosh
+          : tools?.sqlite3;
 
   const test = async () => {
     setTesting(true);
@@ -181,6 +190,10 @@ export function ConnectionEditor({
             { value: "mysql", label: t("conn.engine.mysql") },
             { value: "postgres", label: t("conn.engine.postgres") },
             { value: "sqlite", label: t("conn.engine.sqlite") },
+            {
+              value: "mongodb",
+              label: t("conn.engine.mongodb", { defaultValue: "MongoDB" }),
+            },
           ]}
         />
         {tools && !client && (
@@ -208,7 +221,14 @@ export function ConnectionEditor({
               <div style={{ gridColumn: "span 2" }}>
                 <TextField
                   label={t("conn.address")}
-                  hint={t("conn.addressHint")}
+                  hint={
+                    form.engine === "mongodb"
+                      ? t("conn.addressHintMongo", {
+                          defaultValue:
+                            "127.0.0.1 or host1:27017,host2:27017 or mongodb://...",
+                        })
+                      : t("conn.addressHint")
+                  }
                   value={form.address}
                   onChange={(address) => set({ address })}
                   placeholder="127.0.0.1"
@@ -223,6 +243,36 @@ export function ConnectionEditor({
                 mono
               />
             </div>
+            {form.engine === "mongodb" && (
+              <div
+                className="grid gap-3"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
+                }}
+              >
+                <TextField
+                  label={t("conn.replicaSet", { defaultValue: "Replica Set" })}
+                  hint={t("conn.replicaSetHint", {
+                    defaultValue: "e.g. rs0. Leave blank for standalone",
+                  })}
+                  value={form.replicaSet}
+                  onChange={(replicaSet) => set({ replicaSet })}
+                  placeholder="rs0"
+                  mono
+                />
+                <TextField
+                  label={t("conn.authSource", { defaultValue: "Auth Source" })}
+                  hint={t("conn.authSourceHint", {
+                    defaultValue:
+                      "Database that holds credentials (default: admin)",
+                  })}
+                  value={form.authSource}
+                  onChange={(authSource) => set({ authSource })}
+                  placeholder="admin"
+                  mono
+                />
+              </div>
+            )}
             <div
               className="grid gap-3"
               style={{

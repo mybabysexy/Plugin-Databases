@@ -1,6 +1,11 @@
-export type EngineId = "mysql" | "postgres" | "sqlite";
+export type EngineId = "mysql" | "postgres" | "sqlite" | "mongodb";
 
-export const ENGINES: readonly EngineId[] = ["mysql", "postgres", "sqlite"];
+export const ENGINES: readonly EngineId[] = [
+  "mysql",
+  "postgres",
+  "sqlite",
+  "mongodb",
+];
 
 /** A saved login as the browser sees it. The password is never sent back. */
 export interface ConnectionView {
@@ -14,6 +19,8 @@ export interface ConnectionView {
   database: string;
   runAs: string;
   readOnly: boolean;
+  replicaSet?: string;
+  authSource?: string;
 }
 
 export interface ConnectionInput {
@@ -28,12 +35,15 @@ export interface ConnectionInput {
   database: string;
   runAs: string;
   readOnly: boolean;
+  replicaSet?: string;
+  authSource?: string;
 }
 
 export interface ToolsView {
   mysql: string | null;
   psql: string | null;
   sqlite3: string | null;
+  mongosh: string | null;
 }
 
 export interface TestResult {

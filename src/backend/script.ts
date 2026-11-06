@@ -20,8 +20,13 @@ export function buildScript(
   statements: string[],
   readOnly: boolean,
 ): string {
+  const checkClient =
+    engine.id === "mongodb"
+      ? `(command -v mongosh || command -v mongo) >/dev/null 2>&1 || { echo "DB_ERR:mongosh is not installed on this host"; exit 127; }`
+      : `command -v ${engine.client} >/dev/null 2>&1 || { echo "DB_ERR:${engine.client} is not installed on this host"; exit 127; }`;
+
   const lines = [
-    `command -v ${engine.client} >/dev/null 2>&1 || { echo "DB_ERR:${engine.client} is not installed on this host"; exit 127; }`,
+    checkClient,
     "NM=$'\\001N\\001'",
     setVar("DB_ADDR", conn.address),
     setVar("DB_PORT", conn.port ? String(conn.port) : ""),
@@ -45,9 +50,9 @@ export function buildScript(
   return `${lines.join("\n")}\n`;
 }
 
-/** Looks for the three clients and prints name=version lines. */
+/** Looks for the clients and prints name=version lines. */
 export const TOOLS_SCRIPT = [
-  "for t in mysql psql sqlite3; do",
+  "for t in mysql psql sqlite3 mongosh mongo; do",
   '  if command -v "$t" >/dev/null 2>&1; then',
   '    echo "$t=$("$t" --version 2>&1 | head -n 1)"',
   "  else",

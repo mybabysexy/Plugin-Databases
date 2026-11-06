@@ -20,12 +20,35 @@ export interface ConnectionRecord extends ConnectionView {
 }
 
 function toRecord(row: any): ConnectionRecord {
+  let address = row.address ?? "";
+  let replicaSet: string | undefined;
+  let authSource: string | undefined;
+
+  if (row.kind === "mongodb" && address.includes("?")) {
+    try {
+      const parts = address.split("?");
+      const params = new URLSearchParams(parts[1] || "");
+      if (params.has("replicaSet"))
+        replicaSet = params.get("replicaSet") || undefined;
+      if (params.has("authSource"))
+        authSource = params.get("authSource") || undefined;
+      if (
+        !address.startsWith("mongodb://") &&
+        !address.startsWith("mongodb+srv://")
+      ) {
+        address = parts[0];
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     id: row.id,
     hostId: row.hostId,
     name: row.name,
     engine: row.kind as EngineId,
-    address: row.address ?? "",
+    address,
     port: row.port ?? null,
     username: row.username ?? "",
     hasPassword: Boolean(row.passwordSealed),
@@ -33,6 +56,8 @@ function toRecord(row: any): ConnectionRecord {
     database: row.dbName ?? "",
     runAs: row.runAs ?? "",
     readOnly: Boolean(row.readOnly),
+    replicaSet,
+    authSource,
   };
 }
 
@@ -51,10 +76,22 @@ export function createRepository(
   const client = () => db.client<any>();
 
   function values(input: ConnectionInput) {
+    let address = input.address;
+    if (
+      input.engine === "mongodb" &&
+      (input.replicaSet || input.authSource) &&
+      !address.includes("?")
+    ) {
+      const params = new URLSearchParams();
+      if (input.replicaSet) params.set("replicaSet", input.replicaSet);
+      if (input.authSource) params.set("authSource", input.authSource);
+      const q = params.toString();
+      if (q) address = `${address}?${q}`;
+    }
     return {
       name: input.name,
       kind: input.engine,
-      address: input.address,
+      address,
       port: input.port,
       username: input.username,
       dbName: input.database,
@@ -139,14 +176,28 @@ export function createRepository(
       const password = record.passwordSealed
         ? ((await ctx.secrets.unseal(record.passwordSealed)) ?? "")
         : "";
+      let address = record.address;
+      if (
+        record.engine === "mongodb" &&
+        (record.replicaSet || record.authSource) &&
+        !address.includes("?")
+      ) {
+        const params = new URLSearchParams();
+        if (record.replicaSet) params.set("replicaSet", record.replicaSet);
+        if (record.authSource) params.set("authSource", record.authSource);
+        const q = params.toString();
+        if (q) address = `${address}?${q}`;
+      }
       return {
         engine: record.engine,
-        address: record.address,
+        address,
         port: record.port,
         username: record.username,
         password,
         database: record.database,
         runAs: record.runAs,
+        replicaSet: record.replicaSet,
+        authSource: record.authSource,
       };
     },
   };
